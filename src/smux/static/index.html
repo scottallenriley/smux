@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>smux</title>
+  <link rel="stylesheet" href="/static/vendor/xterm.css">
+  <link rel="stylesheet" href="/static/app.css?v=1.0.0">
+</head>
+<body>
+  <!-- Main area -->
+  <div id="main">
+    <div id="sidebar">
+      <div id="sidebar-resize-handle"></div>
+
+      <!-- Primary action buttons -->
+      <div id="sidebar-actions">
+        <button id="btn-new-term-action" class="action-btn action-primary">
+          <span class="action-icon">＋</span>New Terminal
+        </button>
+        <button id="btn-new-group-action" class="action-btn">
+          <span class="action-icon">⊞</span>New Group
+        </button>
+      </div>
+
+      <div class="sidebar-section-label">Windows</div>
+      <div id="window-list"></div>
+
+      <div id="sidebar-footer">
+        <div id="footer-buttons">
+          <button class="footer-btn" id="btn-search-all" title="Search all windows (⌘F)">
+            <span>⌕</span> Search
+          </button>
+          <button class="footer-btn" id="btn-history" title="Shared history">
+            <span>☰</span> History
+          </button>
+          <button class="footer-btn" id="btn-hosts" title="SSH Hosts">
+            <span>⇄</span> Hosts
+          </button>
+          <button class="footer-btn" id="btn-snippets" title="Snippets">
+            <span>❮❯</span> Snippets
+          </button>
+          <button class="footer-btn" id="btn-settings" title="Settings">
+            <span>⚙</span> Settings
+          </button>
+        </div>
+        <div id="version-label">v1.0.0</div>
+      </div>
+    </div>
+
+    <div id="right-col">
+      <div id="tab-bar">
+        <div id="tabs"></div>
+        <button id="btn-new-tab" title="New terminal (⌘T)">＋</button>
+      </div>
+      <div id="term-container"></div>
+      <div id="term-footer">
+        <button id="btn-clear-term" title="Clear terminal (⌘K)">⌫ Clear</button>
+        <span id="history-counter">0 lines</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- New terminal overlay -->
+  <div id="new-term-overlay" class="overlay hidden">
+    <div class="overlay-box" style="width:380px">
+      <div class="overlay-title">New Terminal</div>
+      <label class="field-label">Label</label>
+      <input id="new-term-label" type="text" placeholder="Terminal" autocomplete="off" spellcheck="false">
+      <label class="field-label">Color</label>
+      <div id="new-term-swatches" class="swatch-row"></div>
+      <div class="btn-row">
+        <button id="new-term-ok" class="btn-primary">Create</button>
+        <button id="new-term-cancel" class="btn-default">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- New group overlay -->
+  <div id="group-overlay" class="overlay hidden">
+    <div class="overlay-box" style="width:380px">
+      <div class="overlay-title">New Group</div>
+      <label class="field-label">Name</label>
+      <input id="group-name-input" type="text" placeholder="e.g. Web, DB, Logs…" autocomplete="off" spellcheck="false">
+      <label class="field-label">Color</label>
+      <div id="group-color-swatches" class="swatch-row"></div>
+      <div class="btn-row">
+        <button id="group-ok" class="btn-primary">Create</button>
+        <button id="group-cancel" class="btn-default">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Search overlay -->
+  <div id="search-overlay" class="overlay hidden">
+    <div class="overlay-box" id="search-box">
+      <div class="overlay-title">Search All Windows</div>
+      <input id="search-input" type="text" placeholder="Type to search…" autocomplete="off" spellcheck="false">
+      <div id="search-results"></div>
+      <div id="search-count"></div>
+    </div>
+  </div>
+
+  <!-- Rename/recolor overlay -->
+  <div id="label-overlay" class="overlay hidden">
+    <div class="overlay-box" style="width:380px">
+      <div class="overlay-title">Edit Terminal</div>
+      <label class="field-label">Label</label>
+      <input id="label-input" type="text" autocomplete="off" spellcheck="false">
+      <label class="field-label">Color</label>
+      <div id="color-swatches" class="swatch-row"></div>
+      <div class="btn-row">
+        <button id="label-ok" class="btn-primary">OK</button>
+        <button id="label-cancel" class="btn-default">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Snippets overlay -->
+  <div id="snippets-overlay" class="overlay hidden">
+    <div class="overlay-box" style="width:480px">
+      <div class="overlay-title">Snippets</div>
+      <div id="snippet-list"></div>
+      <div class="btn-row" style="justify-content:space-between;margin-top:10px">
+        <button id="btn-new-snippet" class="btn-primary">+ New Snippet</button>
+        <button id="snippets-close" class="btn-default">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Snippet edit overlay -->
+  <div id="snippet-edit-overlay" class="overlay hidden">
+    <div class="overlay-box" style="width:480px">
+      <div id="snippet-edit-title" class="overlay-title">New Snippet</div>
+      <label class="field-label">Name</label>
+      <input id="snippet-name-input" type="text" placeholder="e.g. Deploy, Git status…" autocomplete="off" spellcheck="false">
+      <label class="field-label">Content</label>
+      <textarea id="snippet-body-input" rows="6" placeholder="Snippet text…" spellcheck="false"></textarea>
+      <div class="btn-row">
+        <button id="snippet-edit-ok" class="btn-primary">Save</button>
+        <button id="snippet-edit-cancel" class="btn-default">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Settings overlay -->
+  <div id="settings-overlay" class="overlay hidden">
+    <div class="overlay-box" style="width:400px">
+      <div class="overlay-title">Settings</div>
+
+      <label class="field-label">Theme</label>
+      <div id="theme-toggle" class="toggle-group">
+        <button class="toggle-btn active" data-value="dark">Dark</button>
+        <button class="toggle-btn" data-value="light">Light</button>
+      </div>
+
+      <label class="field-label">Font Size</label>
+      <div id="font-size-row" class="toggle-group">
+        <button class="toggle-btn" data-value="11">11</button>
+        <button class="toggle-btn" data-value="12">12</button>
+        <button class="toggle-btn active" data-value="14">14</button>
+        <button class="toggle-btn" data-value="15">15</button>
+        <button class="toggle-btn" data-value="16">16</button>
+        <button class="toggle-btn" data-value="18">18</button>
+        <button class="toggle-btn" data-value="20">20</button>
+      </div>
+
+      <label class="field-label">Font Face</label>
+      <select id="font-face-select">
+        <option value="system">System Default (SF Mono / Menlo)</option>
+        <option value="SF Mono">SF Mono</option>
+        <option value="Menlo">Menlo</option>
+        <option value="Monaco">Monaco</option>
+        <option value="Fira Code">Fira Code</option>
+        <option value="Cascadia Code">Cascadia Code</option>
+        <option value="JetBrains Mono">JetBrains Mono</option>
+        <option value="Courier New">Courier New</option>
+      </select>
+
+      <div class="btn-row">
+        <button id="settings-close" class="btn-primary">Done</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- History overlay -->
+  <div id="history-overlay" class="overlay hidden">
+    <div class="overlay-box" id="history-box">
+      <div class="overlay-title">Shared History</div>
+      <div id="history-lines"></div>
+      <div id="history-footer-row">
+        <span id="history-line-count"></span>
+        <div style="display:flex;gap:8px">
+          <button id="history-clear-btn" class="btn-default">Clear All</button>
+          <button id="history-close" class="btn-primary">Close</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Hosts overlay -->
+  <div id="hosts-overlay" class="overlay hidden">
+    <div class="overlay-box" style="width:480px">
+      <div class="overlay-title">SSH Hosts</div>
+      <div id="host-list"></div>
+      <div class="btn-row" style="justify-content:space-between;margin-top:10px">
+        <button id="btn-new-host" class="btn-primary">+ New Host</button>
+        <button id="hosts-close" class="btn-default">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Host edit overlay -->
+  <div id="host-edit-overlay" class="overlay hidden">
+    <div class="overlay-box" style="width:480px">
+      <div id="host-edit-title" class="overlay-title">New Host</div>
+      <label class="field-label">Name</label>
+      <input id="host-name-input" type="text" placeholder="e.g. prod-web, db-01…" autocomplete="off" spellcheck="false">
+      <label class="field-label">SSH Command</label>
+      <input id="host-cmd-input" type="text" placeholder="e.g. ssh user@hostname" autocomplete="off" spellcheck="false">
+      <div class="btn-row">
+        <button id="host-edit-ok" class="btn-primary">Save</button>
+        <button id="host-edit-cancel" class="btn-default">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Context menu -->
+  <div id="ctx-menu"></div>
+
+  <script src="/static/vendor/xterm.js"></script>
+  <script src="/static/vendor/addon-fit.js"></script>
+  <script src="/static/vendor/addon-search.js"></script>
+  <script src="/static/app.js?v=1.0.0"></script>
+</body>
+</html>

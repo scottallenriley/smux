@@ -1,0 +1,26 @@
+[tool.poetry]
+name = "smux"
+version = "1.0.0"
+description = "Terminal multiplexer with tabbed and grouped windows"
+authors = []
+packages = [{include = "smux", from = "src"}]
+
+[tool.poetry.dependencies]
+python = "^3.11"
+pywebview = ">=4.0"
+aiohttp = ">=3.9"
+ptyprocess = ">=0.7"
+
+[tool.poetry.scripts]
+smux = "smux.main:main"
+
+[tool.poetry.group.dev.dependencies]
+pytest = ">=7.0"
+ruff = ">=0.1"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.ruff]
+line-length = 120
