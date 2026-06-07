@@ -105,18 +105,22 @@ class SmuxApp {
       this._ws.send(JSON.stringify(msg));
   }
 
-  // Send paste text in 512-char chunks with small delays so each write fits
-  // in the macOS PTY kernel buffer (PIPE_BUF = 512 bytes) and never blocks
-  // the event loop or overflows a single WebSocket frame.
+  // Send paste text wrapped in ANSI bracketed-paste sequences and chunked into
+  // 512-char pieces.  The bracket sequences (\x1b[200~ / \x1b[201~) tell the
+  // shell to buffer the entire paste silently before processing — without them
+  // the shell echoes every character as it arrives, creating a PTY output flood
+  // that crashes WKWebView for large pastes.  zsh (macOS default), fish, and
+  // bash 4+ all enable bracketed paste automatically for xterm-256color.
   _pasteText(windowId, text) {
     if (!text) return;
+    const payload = '\x1b[200~' + text + '\x1b[201~';
     const CHUNK = 512;
     let offset = 0;
     const sendNext = () => {
-      if (offset >= text.length) return;
-      this._send({ type: 'input', windowId, data: encodeInput(text.slice(offset, offset + CHUNK)) });
+      if (offset >= payload.length) return;
+      this._send({ type: 'input', windowId, data: encodeInput(payload.slice(offset, offset + CHUNK)) });
       offset += CHUNK;
-      if (offset < text.length) setTimeout(sendNext, 5);
+      if (offset < payload.length) setTimeout(sendNext, 5);
     };
     sendNext();
   }
