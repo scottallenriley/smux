@@ -105,24 +105,13 @@ class SmuxApp {
       this._ws.send(JSON.stringify(msg));
   }
 
-  // Send paste text wrapped in ANSI bracketed-paste sequences and chunked into
-  // 512-char pieces.  The bracket sequences (\x1b[200~ / \x1b[201~) tell the
-  // shell to buffer the entire paste silently before processing — without them
-  // the shell echoes every character as it arrives, creating a PTY output flood
-  // that crashes WKWebView for large pastes.  zsh (macOS default), fish, and
-  // bash 4+ all enable bracketed paste automatically for xterm-256color.
-  _pasteText(windowId, text) {
-    if (!text) return;
-    const payload = '\x1b[200~' + text + '\x1b[201~';
-    const CHUNK = 512;
-    let offset = 0;
-    const sendNext = () => {
-      if (offset >= payload.length) return;
-      this._send({ type: 'input', windowId, data: encodeInput(payload.slice(offset, offset + CHUNK)) });
-      offset += CHUNK;
-      if (offset < payload.length) setTimeout(sendNext, 5);
-    };
-    sendNext();
+  // Signal the server to paste from the macOS clipboard into a PTY window.
+  // The server reads the clipboard itself (via pbpaste / AppleScript) and writes
+  // to the PTY in chunks, completely server-side.  No clipboard data ever passes
+  // through WKWebView's JS heap — that serialisation step was the crash source
+  // for large pastes.
+  _paste(windowId) {
+    this._send({ type: 'paste_from_clipboard', windowId });
   }
 
   // ── Message dispatch ──────────────────────────────────────────────────
@@ -218,22 +207,14 @@ class SmuxApp {
       this._send({ type: 'resize', windowId: win.id, cols, rows });
     });
 
-    // Capture-phase paste handler — always fires before xterm.js sees the event.
-    // We fully own paste: prevent the browser default, stop propagation so xterm
-    // doesn't also handle it, then send in chunks via _pasteText.
-    // clipboardData.getData can return '' in WKWebView even for real text, so we
-    // always fall back to the server-side /clipboard endpoint which reads pbpaste
-    // (and AppleScript for file paths / images).
+    // Capture-phase paste handler — fires before xterm.js sees the event.
+    // We prevent the default and let the server handle the clipboard read and PTY
+    // write entirely.  Never touch clipboardData here — accessing large clipboard
+    // content in WKWebView's JS heap is what caused the crash.
     el.addEventListener('paste', e => {
       e.preventDefault();
       e.stopPropagation();
-      let text = '';
-      try { text = e.clipboardData ? e.clipboardData.getData('text/plain') : ''; } catch (_) {}
-      if (text) {
-        this._pasteText(win.id, text);
-      } else {
-        fetch('/clipboard').then(r => r.text()).then(t => this._pasteText(win.id, t)).catch(() => {});
-      }
+      this._paste(win.id);
     }, true);
 
     // Right-click context menu on the terminal pane
@@ -243,7 +224,7 @@ class SmuxApp {
       const hasSel = !!xterm.getSelection();
       this._showContextMenu(e.clientX, e.clientY, [
         { label: 'Copy',       action: () => { const s = xterm.getSelection(); if (s) navigator.clipboard.writeText(s); }, },
-        { label: 'Paste',      action: () => { fetch('/clipboard').then(r => r.text()).then(t => this._pasteText(win.id, t)); } },
+        { label: 'Paste',      action: () => this._paste(win.id) },
         'separator',
         { label: 'Select All', action: () => xterm.selectAll() },
       ]);

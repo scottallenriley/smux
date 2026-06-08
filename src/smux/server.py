@@ -142,6 +142,11 @@ class SmuxServer:
             if state:
                 state.write(base64.b64decode(msg["data"]))
 
+        elif t == "paste_from_clipboard":
+            state = self.mgr.windows.get(msg.get("windowId", ""))
+            if state:
+                asyncio.ensure_future(self._paste_from_clipboard(state))
+
         elif t == "resize":
             state = self.mgr.windows.get(msg["windowId"])
             if state:
@@ -245,57 +250,72 @@ class SmuxServer:
                 if self._clients:
                     await self._broadcast({"type": "state", **self.mgr.state_dict()})
 
-    async def _clipboard_handler(self, request: web.Request) -> web.Response:
-        """Return the current macOS clipboard contents as plain text.
+    @staticmethod
+    def _read_clipboard_sync() -> str:
+        """Read the macOS clipboard synchronously (call from thread executor only).
 
-        Tries pbpaste first (fast, text only).  If the clipboard holds no text
-        (e.g. files copied in Finder, or a screenshot), falls back to AppleScript
-        to extract POSIX file paths so they can be pasted into the terminal.
+        Tries pbpaste first.  Falls back to AppleScript for Finder file copies.
+        """
+        try:
+            text = subprocess.run(
+                ["/usr/bin/pbpaste"],
+                capture_output=True, timeout=5,
+            ).stdout.decode("utf-8", errors="replace")
+            if text:
+                return text
+        except Exception:
+            pass
 
-        All subprocess calls run in a thread executor — avoids asyncio's subprocess
-        machinery (which conflicts with PyInstaller's SIGCHLD patching and can
-        stall the event loop).
+        try:
+            result = subprocess.run(
+                [
+                    "osascript",
+                    "-e", "set out to {}",
+                    "-e", "try",
+                    "-e", "  set fs to (the clipboard as {alias})",
+                    "-e", "  repeat with f in fs",
+                    "-e", "    set end of out to POSIX path of f",
+                    "-e", "  end repeat",
+                    "-e", "end try",
+                    "-e", "set AppleScript's text item delimiters to \" \"",
+                    "-e", "return out as text",
+                ],
+                capture_output=True, timeout=5,
+            ).stdout.decode("utf-8", errors="replace").strip()
+            return result
+        except Exception:
+            pass
+
+        return ""
+
+    async def _paste_from_clipboard(self, state) -> None:
+        """Read clipboard and write to PTY with bracketed-paste sequences.
+
+        Everything runs in a thread executor — the clipboard read (subprocess)
+        and the PTY write loop (blocking os.write).  No clipboard data ever
+        passes through the WKWebView JS heap, which was the crash source for
+        large pastes.
         """
         loop = asyncio.get_running_loop()
+        text = await loop.run_in_executor(None, self._read_clipboard_sync)
+        if not text:
+            return
 
-        def _read_clipboard() -> str:
-            # 1. Plain text via pbpaste
-            try:
-                text = subprocess.run(
-                    ["/usr/bin/pbpaste"],
-                    capture_output=True, timeout=2,
-                ).stdout.decode("utf-8", errors="replace")
-                if text:
-                    return text
-            except Exception:
-                pass
+        payload = ("\x1b[200~" + text + "\x1b[201~").encode("utf-8", errors="replace")
 
-            # 2. File paths via AppleScript (files copied in Finder).
-            # Uses multiple -e flags (each a single statement) which is more
-            # reliable than embedding newlines in one -e argument.
-            try:
-                result = subprocess.run(
-                    [
-                        "osascript",
-                        "-e", "set out to {}",
-                        "-e", "try",
-                        "-e", "  set fs to (the clipboard as {alias})",
-                        "-e", "  repeat with f in fs",
-                        "-e", "    set end of out to POSIX path of f",
-                        "-e", "  end repeat",
-                        "-e", "end try",
-                        "-e", "set AppleScript's text item delimiters to \" \"",
-                        "-e", "return out as text",
-                    ],
-                    capture_output=True, timeout=3,
-                ).stdout.decode("utf-8", errors="replace").strip()
-                return result
-            except Exception:
-                pass
+        def _write_loop() -> None:
+            CHUNK = 4096
+            for i in range(0, len(payload), CHUNK):
+                if not state.is_alive():
+                    break
+                state.write(payload[i : i + CHUNK])
 
-            return ""
+        await loop.run_in_executor(None, _write_loop)
 
-        text = await loop.run_in_executor(None, _read_clipboard)
+    async def _clipboard_handler(self, request: web.Request) -> web.Response:
+        """Return the current macOS clipboard as plain text (HTTP fallback)."""
+        loop = asyncio.get_running_loop()
+        text = await loop.run_in_executor(None, self._read_clipboard_sync)
         return web.Response(text=text, content_type="text/plain")
 
     # ── Hosts CRUD ─────────────────────────────────────────────────────
